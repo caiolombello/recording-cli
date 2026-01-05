@@ -2,41 +2,94 @@
 
 ## Stack
 - Runtime: Bun (TypeScript)
-- Recording: GNOME Screencast (D-Bus) as the default backend on Ubuntu/Wayland
-- Upload: Proton Drive SDK (TypeScript/JavaScript)
-- Config: JSON file under `~/.config/recording-cli/config.json`
-- Local recordings directory: `~/Videos/Recordings`
+- Recording: Multiple backends (simple, hybrid, ffmpeg-only, gnome, wf-recorder)
+- Upload: S3 or Proton Drive
+- Transcription: OpenAI Whisper API
+- Config: `~/.config/recording-cli/config.json`
+- Local recordings: `~/Videos/Recordings`
 
 ## Project structure
-- `src/cli/` CLI entrypoints, argument parsing, prompts
-- `src/obs/` OBS WebSocket integration (optional backend)
-- `src/proton/` Proton Drive upload client and queue
-- `src/recording/` recording helpers and backend adapters
+- `src/cli/` CLI entrypoint and command routing
 - `src/config/` config loading, defaults, and validation
-
-## Planned features (toggleable)
-- Start/stop recording with optional countdown
-- Screen or window selection (optional, default: full screen)
-- Hotkeys for start/stop (optional)
-- Auto-stop timer (optional)
-- Naming templates (e.g., `YYYY-MM-DD_HH-mm_[title].mkv`)
-- Post-process (optional): compress/transcode before upload
-- Upload queue to Proton Drive with retry
-- Metadata tagging (optional): meeting title, participants
-
-## Notes
-- GNOME backend uses `gdbus` (`libglib2.0-bin`) and `org.gnome.Shell.Screencast`.
-- `wf-recorder` is available as an optional backend on wlroots compositors.
-- OBS WebSocket is optional and only needed if you switch the backend.
-- Recordings are stored locally in `~/Videos/Recordings` before upload.
+- `src/recording/` recording helpers and backend adapters
+- `src/s3/` S3 upload and video playback
+- `src/proton/` Proton Drive upload client
+- `src/transcription/` OpenAI transcription
+- `src/obs/` OBS WebSocket integration (optional)
 
 ## Quick commands
-- Start recording: `bun run src/cli/index.ts record start --title meeting`
-- Stop recording: `bun run src/cli/index.ts record stop`
-- Reset stale state: `bun run src/cli/index.ts record reset`
-- Monitor GNOME errors: `bun run src/cli/index.ts record debug`
+```bash
+# Recording
+bun run src/cli/index.ts record start --title meeting
+bun run src/cli/index.ts record start --audio both --monitor 0
+bun run src/cli/index.ts record stop
+bun run src/cli/index.ts record status
+bun run src/cli/index.ts record reset
+
+# Upload
+bun run src/cli/index.ts upload ~/Videos/Recordings/video.mp4
+bun run src/cli/index.ts upload-all
+
+# S3 playback (opens VLC with presigned URL)
+bun run src/cli/index.ts s3 play
+
+# Transcription
+bun run src/cli/index.ts transcribe ~/Videos/Recordings/video.mp4
+
+# Utils
+bun run src/cli/index.ts monitors
+bun run src/cli/index.ts init
+bun run src/cli/index.ts config
+```
+
+## Options
+- `--title <name>` Recording title
+- `--audio <source>` Audio: none, microphone, desktop, both (default: both)
+- `--monitor <id>` Monitor: 0, 1, 2... or "all" (default: all)
+- `--duration-mins <n>` Auto-stop after N minutes
+- `--geometry <WxH+X+Y>` Record specific region
+- `--foreground` Run in foreground
+- `--force` Ignore existing state
 
 ## Backend selection
-- Set `backend` in `~/.config/recording-cli/config.json` to `gnome` or `wf-recorder`.
-- GNOME backend is recommended for Ubuntu Wayland.
-- GNOME pipeline can be overridden under `gnome.pipeline` if needed.
+Set `backend` in config to: `simple`, `hybrid`, `ffmpeg-only`, `gnome`, or `wf-recorder`.
+
+- `simple` - Recommended, uses ffmpeg with PipeWire
+- `hybrid` - Combines multiple capture methods
+- `ffmpeg-only` - Pure ffmpeg capture
+- `gnome` - GNOME Screencast via D-Bus
+- `wf-recorder` - For wlroots compositors
+
+## Config example
+```json
+{
+  "recordingsDir": "~/Videos/Recordings",
+  "backend": "simple",
+  "gnome": {
+    "framerate": 30,
+    "drawCursor": true,
+    "audioSource": "both"
+  },
+  "s3": {
+    "enabled": true,
+    "bucket": "my-bucket",
+    "region": "us-east-1",
+    "prefix": "recordings/",
+    "profile": "default"
+  },
+  "openai": {
+    "apiKey": "sk-...",
+    "model": "gpt-4o-mini-transcribe",
+    "autoTranscribe": false
+  },
+  "proton": {
+    "enabled": false,
+    "targetFolder": "/Recordings"
+  }
+}
+```
+
+## Notes
+- GNOME backend requires `gdbus` (`libglib2.0-bin`)
+- S3 playback requires VLC and AWS CLI configured
+- Transcription requires OpenAI API key

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { formatName } from "./naming";
 import { clearState, readState, writeState } from "./state";
 import type { AppConfig } from "../config/defaults";
+import { uploadToProtonDrive } from "../proton/upload";
 
 export type StartOptions = {
   title?: string;
@@ -31,6 +32,18 @@ export const startRecording = async (
   const args = ["-f", outputPath];
   if (options.geometry) {
     args.push("-g", options.geometry);
+  }
+  
+  // Add audio support for wf-recorder
+  const audioSource = config.gnome.audioSource || "both";
+  if (audioSource !== "none") {
+    args.push("-a");
+    if (audioSource === "microphone") {
+      args.push("--audio-device", "default");
+    } else if (audioSource === "desktop") {
+      args.push("--audio-device", "default.monitor");
+    }
+    // For "both", wf-recorder will use default which usually captures both
   }
 
   const child = spawn("wf-recorder", args, {
@@ -125,6 +138,26 @@ export const stopRecording = async (): Promise<void> => {
     // ignore if process already ended
   } finally {
     await clearState();
+  }
+  
+  // Upload to cloud storage if enabled
+  const { config } = await import("../config/load").then(m => m.loadConfig());
+  if (config.s3.enabled && state.outputPath) {
+    console.log(`Starting upload to S3: ${state.outputPath}`);
+    const uploadResult = await import("../s3/upload").then(m => m.uploadToS3(config, state.outputPath));
+    if (uploadResult.success) {
+      console.log("S3 upload completed and local file deleted");
+    } else {
+      console.error(`S3 upload failed: ${uploadResult.message}`);
+    }
+  } else if (config.proton.enabled && state.outputPath) {
+    console.log(`Starting upload to Proton Drive: ${state.outputPath}`);
+    const uploadResult = await uploadToProtonDrive(config, state.outputPath);
+    if (uploadResult.success) {
+      console.log("Upload completed and local file moved");
+    } else {
+      console.error(`Upload failed: ${uploadResult.message}`);
+    }
   }
 };
 

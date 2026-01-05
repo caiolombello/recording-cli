@@ -6,9 +6,12 @@ const STATE_DIR = join(homedir(), ".config", "recording-cli");
 const STATE_PATH = join(STATE_DIR, "state.json");
 
 export type RecordingState = {
-  backend: "wf-recorder" | "gnome" | "obs";
+  backend: "wf-recorder" | "gnome" | "obs" | "ffmpeg" | "hybrid" | "ffmpeg-only" | "gnome-ffmpeg";
   pid?: number;
+  videoPid?: number;
   outputPath: string;
+  audioPath?: string;
+  videoPath?: string;
   startedAt: string;
 };
 

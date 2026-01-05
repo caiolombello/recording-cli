@@ -3,11 +3,12 @@ import { join } from "node:path";
 
 export type AppConfig = {
   recordingsDir: string;
-  backend: "wf-recorder" | "gnome" | "obs";
+  backend: "wf-recorder" | "gnome" | "obs" | "ffmpeg" | "hybrid" | "ffmpeg-only" | "simple";
   gnome: {
     pipeline?: string;
     framerate?: number;
     drawCursor?: boolean;
+    audioSource?: "none" | "microphone" | "desktop" | "both";
   };
   obs: {
     enabled: boolean;
@@ -28,15 +29,28 @@ export type AppConfig = {
     accountEmail?: string;
     targetFolder: string;
   };
+  s3: {
+    enabled: boolean;
+    bucket: string;
+    region: string;
+    prefix: string;
+    profile?: string;
+  };
+  openai: {
+    apiKey?: string;
+    model: "whisper-1" | "gpt-4o-transcribe" | "gpt-4o-mini-transcribe";
+    autoTranscribe: boolean;
+  };
 };
 
 export const DEFAULT_CONFIG: AppConfig = {
   recordingsDir: join(homedir(), "Videos", "Recordings"),
-  backend: "gnome",
+  backend: "simple",
   gnome: {
     pipeline: undefined,
     framerate: 30,
-    drawCursor: true
+    drawCursor: true,
+    audioSource: "both"
   },
   obs: {
     enabled: false,
@@ -56,5 +70,17 @@ export const DEFAULT_CONFIG: AppConfig = {
     enabled: false,
     accountEmail: undefined,
     targetFolder: "/Recordings"
+  },
+  s3: {
+    enabled: false,
+    bucket: "",
+    region: "us-east-1",
+    prefix: "recordings/",
+    profile: undefined
+  },
+  openai: {
+    apiKey: undefined,
+    model: "gpt-4o-mini-transcribe",
+    autoTranscribe: false
   }
 };

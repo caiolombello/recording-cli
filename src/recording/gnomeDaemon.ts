@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { promises as fs } from "node:fs";
 import type { AppConfig } from "../config/defaults";
+import { uploadToProtonDrive } from "../proton/upload";
 
 const SCREENCAST_SERVICE = "org.gnome.Shell.Screencast";
 const SCREENCAST_PATH = "/org/gnome/Shell/Screencast";
@@ -21,11 +22,24 @@ const writeLog = async (message: string): Promise<void> => {
   await fs.appendFile(LOG_PATH, line);
 };
 
+const buildFullPipeline = (config: AppConfig): string => {
+  if (config.gnome.pipeline) {
+    return config.gnome.pipeline;
+  }
+
+  // For now, return empty to use default GNOME pipeline
+  // Audio will be handled by system settings
+  return "";
+};
+
 const buildOptions = (config: AppConfig): Record<string, Variant> => {
   const options: Record<string, Variant> = {};
-  if (config.gnome.pipeline) {
-    options["pipeline"] = new Variant("s", config.gnome.pipeline);
+  
+  const pipeline = buildFullPipeline(config);
+  if (pipeline) {
+    options["pipeline"] = new Variant("s", pipeline);
   }
+  
   if (config.gnome.framerate) {
     options["framerate"] = new Variant("i", config.gnome.framerate);
   }
@@ -89,8 +103,40 @@ export const runGnomeDaemon = async (config: AppConfig, title?: string, geometry
   const stop = async (): Promise<void> => {
     try {
       await iface.StopScreencast();
-    } catch {
-      // ignore stop failures
+      await writeLog("Recording stopped successfully");
+      
+      // Upload to cloud storage if enabled
+      if (config.s3.enabled) {
+        await writeLog(`Starting upload to S3: ${outputPath}`);
+        console.log("Starting upload to S3...");
+        
+        const uploadResult = await import("../s3/upload").then(m => m.uploadToS3(config, outputPath));
+        if (uploadResult.success) {
+          await writeLog("S3 upload completed and local file deleted");
+          console.log("S3 upload completed and local file deleted");
+        } else {
+          await writeLog(`S3 upload failed: ${uploadResult.message}`);
+          console.error(`S3 upload failed: ${uploadResult.message}`);
+        }
+      } else if (config.proton.enabled) {
+        await writeLog(`Starting upload to Proton Drive: ${outputPath}`);
+        console.log("Starting upload to Proton Drive...");
+        
+        const uploadResult = await uploadToProtonDrive(config, outputPath);
+        if (uploadResult.success) {
+          await writeLog("Upload completed and local file deleted");
+          console.log("Upload completed and local file deleted");
+        } else {
+          await writeLog(`Upload failed: ${uploadResult.message}`);
+          console.error(`Upload failed: ${uploadResult.message}`);
+        }
+      } else {
+        await writeLog("No upload service enabled");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await writeLog(`Error during stop: ${message}`);
+      console.error(`Error during stop: ${message}`);
     } finally {
       await clearState();
       bus.disconnect();

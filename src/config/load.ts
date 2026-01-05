@@ -22,6 +22,7 @@ type PartialConfig = Partial<AppConfig> & {
   obs?: Partial<AppConfig["obs"]>;
   features?: Partial<AppConfig["features"]>;
   proton?: Partial<AppConfig["proton"]>;
+  s3?: Partial<AppConfig["s3"]>;
 };
 
 export const loadConfig = async (): Promise<LoadedConfig> => {
@@ -46,5 +47,6 @@ const mergeConfig = (base: AppConfig, override: PartialConfig): AppConfig => ({
   gnome: { ...base.gnome, ...override.gnome },
   obs: { ...base.obs, ...override.obs },
   features: { ...base.features, ...override.features },
-  proton: { ...base.proton, ...override.proton }
+  proton: { ...base.proton, ...override.proton },
+  s3: { ...base.s3, ...override.s3 }
 });

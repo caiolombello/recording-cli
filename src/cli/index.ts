@@ -9,10 +9,12 @@ import { runGnomeDaemon } from "../recording/gnomeDaemon";
 import { clearState, readState } from "../recording/state";
 import { uploadToProtonDrive } from "../proton/upload";
 import { uploadToS3 } from "../s3/upload";
+import { listVideos, getPresignedUrl, playWithVlc } from "../s3/play";
 import { transcribe } from "../transcription/openai";
+import * as readline from "node:readline";
 
 const printHelp = (): void => {
-  console.log(`\nRecording CLI (Linux)\n\nUsage:\n  recording-cli <command> [options]\n\nCommands:\n  init              Create a default config file\n  config            Show current config path\n  record start      Start a recording\n  record stop       Stop the current recording\n  record status     Show recording status\n  record reset      Clear local recording state\n  record debug      Monitor GNOME screencast errors\n  record logs       Show GNOME daemon logs\n  transcribe <file> Transcribe a video/audio file\n  upload <file>     Upload a file to cloud storage\n  upload-all        Upload all recordings to cloud storage\n  monitors          List available monitors\n  help              Show this help\n\nOptions:\n  --title <name>           Optional recording title\n  --duration-mins <mins>  Auto-stop after N minutes (foreground only)\n  --geometry <WxH+X+Y>    Record a specific region\n  --audio <source>        Audio source: none, microphone, desktop, both (default: both)\n  --monitor <id>          Monitor to record (0, 1, 2...) or 'all' for all monitors\n  --foreground            Run in foreground (blocks until stop)\n  --force                 Ignore existing state (start only)\n`);
+  console.log(`\nRecording CLI (Linux)\n\nUsage:\n  recording-cli <command> [options]\n\nCommands:\n  init              Create a default config file\n  config            Show current config path\n  record start      Start a recording\n  record stop       Stop the current recording\n  record status     Show recording status\n  record reset      Clear local recording state\n  record debug      Monitor GNOME screencast errors\n  record logs       Show GNOME daemon logs\n  transcribe <file> Transcribe a video/audio file\n  upload <file>     Upload a file to cloud storage\n  upload-all        Upload all recordings to cloud storage\n  s3 play           List S3 videos and play with VLC\n  monitors          List available monitors\n  help              Show this help\n\nOptions:\n  --title <name>           Optional recording title\n  --duration-mins <mins>  Auto-stop after N minutes (foreground only)\n  --geometry <WxH+X+Y>    Record a specific region\n  --audio <source>        Audio source: none, microphone, desktop, both (default: both)\n  --monitor <id>          Monitor to record (0, 1, 2...) or 'all' for all monitors\n  --foreground            Run in foreground (blocks until stop)\n  --force                 Ignore existing state (start only)\n`);
 };
 
 const parseFlag = (args: string[], flag: string): string | undefined => {
@@ -388,6 +390,51 @@ const main = async (): Promise<void> => {
         });
       } catch (err) {
         console.error("Error listing monitors:", err instanceof Error ? err.message : String(err));
+      }
+      break;
+    }
+    case "s3": {
+      if (subcommand === "play") {
+        try {
+          const { config } = await loadConfig();
+          if (!config.s3.enabled || !config.s3.bucket) {
+            console.error("S3 not configured. Set s3.enabled and s3.bucket in config.");
+            process.exit(1);
+          }
+
+          console.log("Fetching videos from S3...");
+          const videos = await listVideos(config);
+          
+          if (videos.length === 0) {
+            console.log("No videos found in S3.");
+            break;
+          }
+
+          console.log("\nAvailable videos:");
+          videos.forEach((v, i) => console.log(`  ${i + 1}. ${v}`));
+
+          const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+          const answer = await new Promise<string>((resolve) => {
+            rl.question("\nSelect video number: ", resolve);
+          });
+          rl.close();
+
+          const idx = parseInt(answer, 10) - 1;
+          if (isNaN(idx) || idx < 0 || idx >= videos.length) {
+            console.error("Invalid selection.");
+            process.exit(1);
+          }
+
+          console.log(`Opening ${videos[idx]} in VLC...`);
+          const url = await getPresignedUrl(config, videos[idx]);
+          playWithVlc(url);
+        } catch (err) {
+          console.error(err instanceof Error ? err.message : String(err));
+          process.exit(1);
+        }
+      } else {
+        console.error("Unknown s3 command. Use: s3 play");
+        process.exit(1);
       }
       break;
     }

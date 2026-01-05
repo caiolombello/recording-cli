@@ -5,6 +5,16 @@ import { execSync } from "node:child_process";
 import OpenAI from "openai";
 import type { AppConfig } from "../config/defaults";
 
+const MAX_DURATION = 1300; // seconds, with margin below 1400s limit
+
+const getAudioDuration = (path: string): number => {
+  const out = execSync(
+    `ffprobe -v error -show_entries format=duration -of csv=p=0 "${path}"`,
+    { encoding: "utf-8" }
+  );
+  return parseFloat(out.trim());
+};
+
 const extractAndSpeedUpAudio = async (videoPath: string, speed: number = 1.5): Promise<string> => {
   const folder = videoPath.replace(/\/[^/]+$/, "");
   const audioPath = join(folder, "audio_fast.mp3");
@@ -16,6 +26,16 @@ const extractAndSpeedUpAudio = async (videoPath: string, speed: number = 1.5): P
   );
   
   return audioPath;
+};
+
+const extractChunk = (audioPath: string, start: number, duration: number, index: number): string => {
+  const folder = audioPath.replace(/\/[^/]+$/, "");
+  const chunkPath = join(folder, `chunk_${index}.mp3`);
+  execSync(
+    `ffmpeg -y -ss ${start} -i "${audioPath}" -t ${duration} -c copy "${chunkPath}"`,
+    { stdio: "pipe" }
+  );
+  return chunkPath;
 };
 
 type Segment = {
@@ -68,6 +88,27 @@ const generateSummary = async (openai: OpenAI, transcript: string): Promise<stri
   return response.choices[0].message.content || "";
 };
 
+const transcribeChunk = async (
+  openai: OpenAI,
+  audioPath: string,
+  offsetSeconds: number
+): Promise<Segment[]> => {
+  const response = await openai.audio.transcriptions.create({
+    file: fs.createReadStream(audioPath),
+    model: "gpt-4o-transcribe-diarize",
+    // @ts-ignore - not in types yet
+    response_format: "diarized_json",
+    // @ts-ignore
+    chunking_strategy: "auto",
+  }) as any;
+
+  return (response.segments || []).map((seg: Segment) => ({
+    ...seg,
+    start: seg.start + offsetSeconds,
+    end: seg.end + offsetSeconds,
+  }));
+};
+
 export const transcribe = async (
   config: AppConfig,
   videoPath: string
@@ -81,26 +122,35 @@ export const transcribe = async (
   const folder = videoPath.replace(/\/[^/]+$/, "");
   const speed = 1.0;
 
-  // Extract and speed up audio to reduce costs
   const audioPath = await extractAndSpeedUpAudio(videoPath, speed);
+  const duration = getAudioDuration(audioPath);
   
   console.log("📝 Transcribing with speaker diarization...");
-  const response = await openai.audio.transcriptions.create({
-    file: fs.createReadStream(audioPath),
-    model: "gpt-4o-transcribe-diarize",
-    // @ts-ignore - not in types yet
-    response_format: "diarized_json",
-    // @ts-ignore
-    chunking_strategy: "auto",
-  }) as any;
-
-  const segments: Segment[] = response.segments || [];
-  const transcript = formatTranscript(segments, speed);
   
-  // Generate summary
+  let allSegments: Segment[] = [];
+  const chunkPaths: string[] = [];
+
+  if (duration <= MAX_DURATION) {
+    allSegments = await transcribeChunk(openai, audioPath, 0);
+  } else {
+    const numChunks = Math.ceil(duration / MAX_DURATION);
+    console.log(`   Audio is ${Math.round(duration)}s, splitting into ${numChunks} chunks...`);
+    
+    for (let i = 0; i < numChunks; i++) {
+      const start = i * MAX_DURATION;
+      const chunkDuration = Math.min(MAX_DURATION, duration - start);
+      const chunkPath = extractChunk(audioPath, start, chunkDuration, i);
+      chunkPaths.push(chunkPath);
+      
+      console.log(`   Transcribing chunk ${i + 1}/${numChunks}...`);
+      const segments = await transcribeChunk(openai, chunkPath, start);
+      allSegments.push(...segments);
+    }
+  }
+
+  const transcript = formatTranscript(allSegments, speed);
   const summary = await generateSummary(openai, transcript);
   
-  // Build final output
   const output = `# Transcrição
 
 ${transcript}
@@ -112,12 +162,12 @@ ${transcript}
 ${summary}
 `;
 
-  // Save transcript
   const txtPath = join(folder, "transcript.txt");
   await fsp.writeFile(txtPath, output);
   
-  // Cleanup temp audio
+  // Cleanup
   await fsp.unlink(audioPath).catch(() => {});
+  for (const p of chunkPaths) await fsp.unlink(p).catch(() => {});
   
   console.log(`✅ Transcript saved: ${txtPath}`);
   return output;

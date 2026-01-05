@@ -20,7 +20,7 @@ export const listVideos = async (config: AppConfig): Promise<string[]> => {
   const output = await runAwsCommand(args);
   return output
     .split("\n")
-    .map((line) => line.trim().split(/\s+/).pop() || "")
+    .map((line) => line.trim().split(/\s+/).slice(3).join(" "))
     .filter((f) => /\.(mp4|mkv|webm|mov|avi)$/i.test(f));
 };
 

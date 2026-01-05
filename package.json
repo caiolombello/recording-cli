@@ -11,6 +11,8 @@
   "dependencies": {
     "dbus-next": "^0.10.2",
     "debug": "^4.4.0",
+    "obs-websocket-js": "^5.0.7",
+    "openai": "^6.15.0",
     "x11": "^2.3.0"
   }
 }

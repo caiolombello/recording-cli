@@ -18,7 +18,7 @@ help:
 
 install-deps:
 	sudo apt-get update
-	sudo apt-get install -y wf-recorder libglib2.0-bin gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
+	sudo apt-get install -y ffmpeg wf-recorder libglib2.0-bin gstreamer1.0-pipewire gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
 
 build:
 	bun build src/cli/index.ts --target=bun --outdir $(DIST_DIR)

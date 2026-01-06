@@ -100,7 +100,7 @@ const transcribeChunk = async (
     response_format: "diarized_json",
     // @ts-ignore
     chunking_strategy: "auto",
-  }) as any;
+  }, { timeout: 10 * 60 * 1000 }) as any; // 10 min timeout per chunk
 
   return (response.segments || []).map((seg: Segment) => ({
     ...seg,

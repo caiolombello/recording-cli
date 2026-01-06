@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
-import { basename } from "node:path";
+import { basename, extname } from "node:path";
 import type { AppConfig } from "../config/defaults";
 
 export type UploadResult = {
@@ -55,7 +55,11 @@ export const uploadToS3 = async (
     const stat = await fs.stat(localPath);
     const isDir = stat.isDirectory();
     const name = basename(localPath);
-    const s3Key = `${config.s3.prefix}${name}`;
+    const ext = extname(name);
+    const folderName = isDir ? name : name.replace(ext, "");
+    const s3Key = isDir 
+      ? `${config.s3.prefix}${name}`
+      : `${config.s3.prefix}${folderName}/video${ext}`;
     const s3Uri = `s3://${config.s3.bucket}/${s3Key}`;
     
     console.log(`Uploading ${name} to S3: ${s3Uri}`);
